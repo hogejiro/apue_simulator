@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="ja" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>APUE Simulator</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header>
+  <button id="sidebar-toggle">&#9776;</button>
+  <h1>APUE Simulator</h1>
+  <span class="subtitle">Advanced Programming in the UNIX Environment</span>
+  <span class="spacer"></span>
+  <span class="progress-indicator" title="Visited modules"><span id="progress-count">0/15</span></span>
+  <button id="theme-toggle">&#127769;</button>
+</header>
+
+<div class="app-layout">
+  <aside class="module-sidebar" id="sidebar">
+    <nav>
+      <div class="nav-group">
+        <div class="nav-group-title">File I/O</div>
+        <button class="active" data-module="fd-table">fd Table</button>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-title">Process</div>
+        <button data-module="process-memory">Memory Layout</button>
+        <button data-module="fork-exec">fork/exec</button>
+        <button data-module="session-jobctl">Session & Jobs</button>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-title">Threads</div>
+        <button data-module="thread-sync">Thread Sync</button>
+        <button data-module="deadlock">Deadlock</button>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-title">Signals</div>
+        <button data-module="signal-delivery">Signal Delivery</button>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-title">IPC</div>
+        <button data-module="pipe-fifo">Pipe & FIFO</button>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-title">Advanced I/O</div>
+        <button data-module="record-lock">Record Lock</button>
+        <button data-module="io-multiplexing">I/O Multiplexing</button>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-title">Terminal</div>
+        <button data-module="terminal-modes">Terminal Modes</button>
+        <button data-module="pty-dataflow">PTY Dataflow</button>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-title">Network</div>
+        <button data-module="socket-api">Socket API</button>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-title">Daemon</div>
+        <button data-module="daemon-steps">Daemon Steps</button>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-title">Reference</div>
+        <button data-module="syscall-ref">Syscall Reference</button>
+      </div>
+    </nav>
+  </aside>
+
+  <main id="viz">
+  </main>
+</div>
+
+<script type="module">
+  import { FdTableVisualizer } from './modules/fd-table/visualizer.js';
+  import { ForkExecVisualizer } from './modules/fork-exec/visualizer.js';
+  import { SignalDeliveryVisualizer } from './modules/signal-delivery/visualizer.js';
+  import { PipeFifoVisualizer } from './modules/pipe-fifo/visualizer.js';
+  import { RecordLockVisualizer } from './modules/record-lock/visualizer.js';
+  import { SessionJobctlVisualizer } from './modules/session-jobctl/visualizer.js';
+  import { ThreadSyncVisualizer } from './modules/thread-sync/visualizer.js';
+  import { DaemonStepsVisualizer } from './modules/daemon-steps/visualizer.js';
+  import { ProcessMemoryVisualizer } from './modules/process-memory/visualizer.js';
+  import { TerminalModesVisualizer } from './modules/terminal-modes/visualizer.js';
+  import { PtyDataflowVisualizer } from './modules/pty-dataflow/visualizer.js';
+  import { DeadlockVisualizer } from './modules/deadlock/visualizer.js';
+  import { IoMultiplexingVisualizer } from './modules/io-multiplexing/visualizer.js';
+  import { SocketApiVisualizer } from './modules/socket-api/visualizer.js';
+  import { SyscallRefVisualizer } from './modules/syscall-ref/visualizer.js';
+
+  // ---------------------------------------------------------------------------
+  // MODULE_REGISTRY
+  // ---------------------------------------------------------------------------
+  const MODULE_REGISTRY = {
+    'fd-table': { visualizer: FdTableVisualizer },
+    'process-memory': { visualizer: ProcessMemoryVisualizer },
+    'fork-exec': { visualizer: ForkExecVisualizer },
+    'session-jobctl': { visualizer: SessionJobctlVisualizer },
+    'thread-sync': { visualizer: ThreadSyncVisualizer },
+    'deadlock': { visualizer: DeadlockVisualizer },
+    'signal-delivery': { visualizer: SignalDeliveryVisualizer },
+    'pipe-fifo': { visualizer: PipeFifoVisualizer },
+    'record-lock': { visualizer: RecordLockVisualizer },
+    'io-multiplexing': { visualizer: IoMultiplexingVisualizer },
+    'terminal-modes': { visualizer: TerminalModesVisualizer },
+    'pty-dataflow': { visualizer: PtyDataflowVisualizer },
+    'socket-api': { visualizer: SocketApiVisualizer },
+    'daemon-steps': { visualizer: DaemonStepsVisualizer },
+    'syscall-ref': { visualizer: SyscallRefVisualizer },
+  };
+
+  // ---------------------------------------------------------------------------
+  // Module switching
+  // ---------------------------------------------------------------------------
+  const vizEl = document.getElementById('viz');
+  let currentViz = null;
+
+  // Progress tracker — marks completed when user reaches the last step
+  function getCompleted() {
+    try { return new Set(JSON.parse(localStorage.getItem('apue-completed') || '[]')); } catch { return new Set(); }
+  }
+  function markCompleted(scenarioKey) {
+    const c = getCompleted(); c.add(scenarioKey);
+    localStorage.setItem('apue-completed', JSON.stringify([...c]));
+    updateProgressBadges();
+  }
+  function updateProgressBadges() {
+    const completed = getCompleted();
+    document.querySelectorAll('nav button[data-module]').forEach(btn => {
+      const mod = btn.dataset.module;
+      const existing = btn.querySelector('.visited-check');
+      // Check if any scenario in this module is completed
+      const hasCompleted = [...completed].some(k => k.startsWith(mod + ':'));
+      if (hasCompleted && !existing) {
+        btn.insertAdjacentHTML('beforeend', '<span class="visited-check"> ✓</span>');
+      } else if (!hasCompleted && existing) {
+        existing.remove();
+      }
+    });
+    const total = document.querySelectorAll('nav button[data-module]').length;
+    const modulesCompleted = new Set([...completed].map(k => k.split(':')[0])).size;
+    const pEl = document.getElementById('progress-count');
+    if (pEl) pEl.textContent = `${modulesCompleted}/${total}`;
+  }
+
+  function switchModule(name) {
+    if (currentViz && currentViz.destroy) currentViz.destroy();
+    vizEl.innerHTML = '';
+    window._currentModule = name;
+
+    // Update nav
+    document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+    const btn = document.querySelector(`nav button[data-module="${name}"]`);
+    if (btn) btn.classList.add('active');
+
+    const entry = MODULE_REGISTRY[name];
+    if (!entry) return;
+
+    if (entry.visualizer) {
+      currentViz = new entry.visualizer(vizEl);
+      currentViz.init();
+    }
+  }
+
+  // Expose switchModule for related links
+  window.switchModule = switchModule;
+
+  // Delegate related link clicks
+  document.getElementById('viz').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-goto-module]');
+    if (btn) switchModule(btn.dataset.gotoModule);
+  });
+
+  // Auto-inject related links after lesson panel
+  import { MODULE_RELATIONS } from './core/module-links.js';
+
+  const observer = new MutationObserver(() => {
+    const mod = window._currentModule;
+    if (!mod) return;
+    const links = MODULE_RELATIONS[mod];
+    if (!links || links.length === 0) return;
+
+    // Only inject once per render
+    if (vizEl.querySelector('.related-links')) return;
+    const lesson = vizEl.querySelector('.lesson-panel');
+    if (lesson) {
+      const div = document.createElement('div');
+      div.className = 'related-links';
+      div.innerHTML = `<span class="related-label">Related:</span>` +
+        links.map(l => `<button class="related-btn" data-goto-module="${l.module}">${l.label}</button>`).join('');
+      lesson.after(div);
+    }
+  });
+  observer.observe(vizEl, { childList: true, subtree: true });
+
+  // Completion detection: when step-info shows "Step N / N" (last step)
+  const completionObserver = new MutationObserver(() => {
+    const stepInfo = vizEl.querySelector('.step-info');
+    if (!stepInfo) return;
+    const match = stepInfo.textContent.match(/Step (\d+) \/ (\d+)/);
+    if (match && match[1] === match[2] && match[1] !== '0') {
+      const mod = window._currentModule;
+      const scenarioSelect = vizEl.querySelector('#scenario-select');
+      const scenarioIdx = scenarioSelect ? scenarioSelect.value : '0';
+      markCompleted(`${mod}:${scenarioIdx}`);
+    }
+  });
+  completionObserver.observe(vizEl, { childList: true, subtree: true, characterData: true });
+
+  // Nav button clicks
+  document.querySelectorAll('nav button[data-module]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (btn.disabled) return;
+      switchModule(btn.dataset.module);
+    });
+  });
+
+  // Category collapse
+  document.querySelectorAll('.nav-group-title').forEach(title => {
+    title.addEventListener('click', () => {
+      title.parentElement.classList.toggle('closed');
+    });
+  });
+
+  // Sidebar toggle
+  document.getElementById('sidebar-toggle').addEventListener('click', () => {
+    document.getElementById('sidebar').classList.toggle('collapsed');
+  });
+
+  // Theme toggle
+  document.getElementById('theme-toggle').addEventListener('click', () => {
+    const html = document.documentElement;
+    const current = html.getAttribute('data-theme');
+    const next = current === 'dark' ? 'light' : 'dark';
+    html.setAttribute('data-theme', next);
+    localStorage.setItem('apue-theme', next);
+  });
+
+  // Restore theme
+  const savedTheme = localStorage.getItem('apue-theme');
+  if (savedTheme) document.documentElement.setAttribute('data-theme', savedTheme);
+
+  // Restore progress badges
+  updateProgressBadges();
+
+  // Initial module
+  switchModule('fd-table');
+</script>
+
+</body>
+</html>
